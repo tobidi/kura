@@ -266,6 +266,39 @@ public class LinuxProcessUtil {
 		}
 	}	
 	
+	public static boolean isPid(int pid) throws Exception {
+		StringTokenizer st = null;
+		String line = null;
+		SafeProcess proc = null;
+		boolean ret = false;
+		try {
+    		s_logger.trace("searching process list for pid={}", pid);
+    		if ("intel-edison".equals(s_platform)) {
+    			proc = ProcessUtil.exec("ps");
+    		} else {
+    			proc = ProcessUtil.exec("ps -ax");
+    		}
+			proc.waitFor();
+    
+    		//get the output
+    		BufferedReader br = new BufferedReader( new InputStreamReader(proc.getInputStream()));
+    		while ((line = br.readLine()) != null) {
+    			st = new StringTokenizer(line);
+				int processID = Integer.parseInt(st.nextToken());
+				if (processID == pid) {
+					ret = true;
+					break;
+				}
+    		}
+		} catch(Exception e) {
+			throw e;
+		}
+		finally {
+			ProcessUtil.destroy(proc);
+		}
+		return ret;
+	}
+	
 	public static int getKuraPid() throws Exception {
 
 		int pid = -1;
