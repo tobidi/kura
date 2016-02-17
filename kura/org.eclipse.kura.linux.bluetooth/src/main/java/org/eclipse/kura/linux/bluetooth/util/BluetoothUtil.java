@@ -29,6 +29,7 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.kura.KuraErrorCode;
 import org.eclipse.kura.KuraException;
 import org.eclipse.kura.bluetooth.BluetoothBeaconData;
+import org.eclipse.kura.bluetooth.BluetoothLeAdvertisingScanData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -420,6 +421,52 @@ public class BluetoothUtil {
 	
 	
 	/**
+	 * Parse EIR data from a BLE advertising report,
+	 * extracting UUID, major and minor number.
+	 * 
+	 * See Bluetooth Core 4.0; 8 EXTENDED INQUIRY RESPONSE DATA FORMAT
+	 * 
+	 * @param b Array containing EIR data
+	 * @param i Index of first byte of EIR data
+	 * @return BeaconInfo or null if no beacon data present
+	 */	
+	private static BluetoothLeAdvertisingScanData parseEIRData2(byte[] b, int payloadPtr, int len) {
+		for(int ptr = payloadPtr; ptr < payloadPtr + len;) {
+			
+			int structSize = b[ptr];
+			if(structSize == 0)
+				break;
+			
+			byte dataType = b[ptr+1];
+
+			if(dataType == (byte)0xFF) { // Data-Type: Manufacturer-Specific
+
+				int prefixPtr = ptr + 2;
+				byte[] prefix = new byte[] {
+						0x35,
+						0x12
+				};
+				
+				if(Arrays.equals(prefix, Arrays.copyOfRange(b, prefixPtr, prefixPtr + prefix.length))) {
+					BluetoothLeAdvertisingScanData bi = new BluetoothLeAdvertisingScanData();
+					
+					int manufactureSpecyficDataPtr = ptr + 2 + prefix.length;
+					
+					bi.setDataType(dataType);
+					bi.setDataLength(structSize-1-prefix.length);
+					bi.setData( Arrays.copyOfRange(b, manufactureSpecyficDataPtr, manufactureSpecyficDataPtr + (structSize-1-prefix.length)) );
+					
+					return bi;
+				}
+			}
+			
+			ptr += structSize + 1;	
+		}
+		
+		return null;
+	}
+
+	/**
 	 * Parse BLE beacons out of an HCL LE Advertising Report Event
 	 * 
 	 * See Bluetooth Core 4.0; 7.7.65.2 LE Advertising Report Event
@@ -470,6 +517,66 @@ public class BluetoothUtil {
 
 				bi.address = address;
 				bi.rssi = b[ptr + len];
+				results.add(bi);
+			}
+			
+			ptr += len;
+		}
+		
+		return results;
+	}
+
+	
+	/**
+	 * Parse BLE beacons out of an HCL LE Advertising Report Event
+	 * 
+	 * See Bluetooth Core 4.0; 7.7.65.2 LE Advertising Report Event
+	 * @param b
+	 * @return
+	 */
+	@SuppressWarnings("unused")
+	public static List<BluetoothLeAdvertisingScanData> parseLEAdvertisingReport2(byte[] b) {
+		List<BluetoothLeAdvertisingScanData> results = new LinkedList<BluetoothLeAdvertisingScanData>();
+		
+		// Packet Type: Event
+		if(b[0] != 4)
+			return results;
+		
+		// Event Type: LE Advertisement Report
+		if(b[1] != 0x3E)
+			return results;
+
+		int paramLen = b[2];
+		
+		// LE Advertisement Subevent Code: 0x02
+		if(b[3] != 0x02)
+			return results;
+		
+		int numReports = b[4];
+		
+		int ptr = 5;
+		for(int i = 0; i < numReports; i++) {
+			int eventType = b[ptr++];
+			int addressType = b[ptr++];
+			
+			// Extract remote address
+			String address = String.format("%02X:%02X:%02X:%02X:%02X:%02X",
+											b[ptr+5],
+											b[ptr+4],
+											b[ptr+3],
+											b[ptr+2],
+											b[ptr+1],
+											b[ptr+0]);
+			ptr += 6;
+			
+			
+			int len = b[ptr++];
+			
+			BluetoothLeAdvertisingScanData bi = parseEIRData2(b, ptr, len);
+			if(bi != null) {
+
+				bi.setAddress(address);
+				bi.setRssi(b[ptr + len]);
 				results.add(bi);
 			}
 			

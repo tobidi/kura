@@ -79,6 +79,15 @@ public interface BluetoothAdapter {
 	*/
 	void startBeaconScan(BluetoothBeaconScanListener listener);
 	
+
+	/**
+	* Starts an asynchronous scan for Bluetooth LE devices. Advertising data is
+	* relayed through the {@link BluetoothLeAdvertisingScanListener} as it arrives.
+	* 
+	* @param listener Interface for collecting advertising scan data.
+	*/
+	void startAdvertisingScan(BluetoothLeAdvertisingScanListener listener);
+	
 	
 	/**
 	 * Get a remote Bluetooth device based on hardware adress

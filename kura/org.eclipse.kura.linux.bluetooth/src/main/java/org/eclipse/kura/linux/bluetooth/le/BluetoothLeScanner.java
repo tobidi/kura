@@ -20,7 +20,9 @@ import java.util.Map.Entry;
 import org.eclipse.kura.bluetooth.BluetoothBeaconData;
 import org.eclipse.kura.bluetooth.BluetoothBeaconScanListener;
 import org.eclipse.kura.bluetooth.BluetoothDevice;
+import org.eclipse.kura.bluetooth.BluetoothLeAdvertisingScanListener;
 import org.eclipse.kura.bluetooth.BluetoothLeScanListener;
+import org.eclipse.kura.bluetooth.BluetoothLeAdvertisingScanData;
 import org.eclipse.kura.linux.bluetooth.BluetoothDeviceImpl;
 import org.eclipse.kura.linux.bluetooth.util.BTSnoopListener;
 import org.eclipse.kura.linux.bluetooth.util.BluetoothProcess;
@@ -43,6 +45,7 @@ public class BluetoothLeScanner implements BluetoothProcessListener, BTSnoopList
 	private BluetoothProcess m_dump_proc = null;
 	private BluetoothLeScanListener m_listener = null;
 	private BluetoothBeaconScanListener m_beacon_listener = null;
+	private BluetoothLeAdvertisingScanListener m_advertising_listener;
 	private boolean m_scanRunning = false;
 
 	public BluetoothLeScanner() {
@@ -75,12 +78,27 @@ public class BluetoothLeScanner implements BluetoothProcessListener, BTSnoopList
 		set_scanRunning(true);
 	}
 
+	public void startAdvertisingScan(String name, BluetoothLeAdvertisingScanListener listener) {
+		m_advertising_listener = listener;
+
+		s_logger.info("Starting bluetooth le advertising scan...");
+
+		// Start scan process
+		m_proc = BluetoothUtil.hcitoolCmd(name, new String[]{ "lescan-passive", "--duplicates" }, this);
+		
+		// Start dump process
+		m_dump_proc = BluetoothUtil.btdumpCmd(name, this);
+					
+		set_scanRunning(true);		
+	}
+
 	public void killScan() {
 		// SIGINT must be sent to the hcitool process. Otherwise the adapter must be toggled (down/up).
 		if (m_proc != null) {
 			s_logger.info("Killing hcitool...");
 			BluetoothUtil.killCmd(BluetoothUtil.HCITOOL, SIGINT);
 			m_proc = null;
+			m_listener = null;
 		}
 		else
 			s_logger.info("Cannot Kill hcitool, m_proc = null ...");
@@ -90,6 +108,8 @@ public class BluetoothLeScanner implements BluetoothProcessListener, BTSnoopList
 			s_logger.info("Killing btdump...");
 			m_dump_proc.destroy();
 			m_dump_proc = null;
+			m_beacon_listener = null;
+			m_advertising_listener = null;
 		}
 		else
 			s_logger.info("Cannot Kill btdump, m_dump_proc = null ...");
@@ -171,20 +191,40 @@ public class BluetoothLeScanner implements BluetoothProcessListener, BTSnoopList
 
 		try {
 			
-			// Extract beacon advertisements
-			List<BluetoothBeaconData> beaconDatas = BluetoothUtil.parseLEAdvertisingReport(record);
-
-			// Extract beacon data
-			for(BluetoothBeaconData beaconData : beaconDatas) {
+			
+			if (m_beacon_listener!=null){
+				// Extract beacon advertisements
+				List<BluetoothBeaconData> beaconDatas = BluetoothUtil.parseLEAdvertisingReport(record);
+	
+				// Extract beacon data
+				for(BluetoothBeaconData beaconData : beaconDatas) {
+					
+					// Notify the listener
+					try {
+						
+						if(m_beacon_listener != null)
+							m_beacon_listener.onBeaconDataReceived(beaconData);
+						
+					} catch(Exception e) {
+						s_logger.error("Scan listener threw exception", e);
+					}
+				}
+			}else if (m_advertising_listener!=null){
 				
-				// Notify the listener
-				try {
+				List<BluetoothLeAdvertisingScanData> advertisingScanDatas = BluetoothUtil.parseLEAdvertisingReport2(record);
+				
+				// Extract beacon data
+				for(BluetoothLeAdvertisingScanData advertisingScanData : advertisingScanDatas) {
 					
-					if(m_beacon_listener != null)
-						m_beacon_listener.onBeaconDataReceived(beaconData);
-					
-				} catch(Exception e) {
-					s_logger.error("Scan listener threw exception", e);
+					// Notify the listener
+					try {
+						
+						if(m_advertising_listener != null)
+							m_advertising_listener.onAdvertisingScanDataReceived(advertisingScanData);
+						
+					} catch(Exception e) {
+						s_logger.error("Scan listener threw exception", e);
+					}
 				}
 			}
 			
